@@ -65,3 +65,77 @@ SELECT channel,
 FROM marketing
 GROUP BY channel
 ORDER by roi DESC;
+
+2.1
+SELECT strftime('%Y-%m', order_date) AS year_month,
+       SUM(net_amount) AS total_revenue
+FROM orders
+GROUP BY strftime('%Y-%m', order_date)
+ORDER BY strftime('%Y-%m', order_date);
+
+2.5
+SELECT CASE
+           WHEN customer_group = 1 THEN 'Top 5%'
+           ELSE 'Rest'
+       END AS customer_segment,
+       SUM(total_spent) AS segment_revenue,
+       ROUND(
+           SUM(total_spent) / SUM(SUM(total_spent)) OVER (),4
+       ) AS segment_pct
+FROM(SELECT customer_id,
+            SUM(net_amount) AS total_spent,
+            NTILE(20) OVER (order BY SUM(net_amount) DESC) AS customer_group
+	 FROM orders
+	 GROUP BY customer_id
+	) AS t
+GROUP BY customer_segment
+ORDER BY segment_revenue 
+_____________________________________________________________________________
+Task p
+WITH customer_groups AS (
+    SELECT customer_group,
+           SUM(total_spent) AS group_revenue
+    FROM (
+        SELECT customer_id,
+               SUM(net_amount) AS total_spent,
+               NTILE(20) OVER (
+                   ORDER BY SUM(net_amount) DESC
+               ) AS customer_group
+        FROM orders
+        GROUP BY customer_id
+    ) AS t
+    GROUP BY customer_group
+)
+
+SELECT customer_group,
+       group_revenue,
+       SUM(group_revenue) OVER (
+           ORDER BY customer_group
+       ) AS cumulative_revenue,
+       ROUND(
+           SUM(group_revenue) OVER (
+               ORDER BY customer_group
+           ) * 100.0
+           / SUM(group_revenue) OVER (),
+           2
+       ) AS cumulative_pct
+FROM customer_groups
+ORDER BY customer_group;
+
+2.6
+SELECT acquisition_chan,
+       COUNT(customer_id) AS customers,
+       SUM(total_spent) AS total_revenue,
+       ROUND(AVG(total_spent), 2) AS avg_revenue_per_customer
+FROM (
+    SELECT c.acquisition_chan,
+           c.customer_id,
+           SUM(o.net_amount) AS total_spent
+    FROM customers c
+    JOIN orders o USING (customer_id)
+    GROUP BY c.acquisition_chan,
+             c.customer_id
+) AS t
+GROUP BY acquisition_chan
+ORDER BY avg_revenue_per_customer DESC;
+
