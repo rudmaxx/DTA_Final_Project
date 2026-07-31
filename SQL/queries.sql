@@ -139,3 +139,108 @@ FROM (
 GROUP BY acquisition_chan
 ORDER BY avg_revenue_per_customer DESC;
 
+3.1
+SELECT
+    SUM(net_amount) AS total_revenue,
+    COUNT(order_id) AS total_orders,
+    ROUND(AVG(net_amount), 2) AS avg_order_value,
+    ROUND(
+        COUNT(CASE WHEN is_returned = 1 THEN 1 END) * 100.0
+        / COUNT(order_id),
+        2
+    ) AS return_rate
+FROM orders;
+
+8
+WITH customer_stats AS (
+    SELECT customer_id,
+           AVG(discount_pct) AS avg_discount,
+           COUNT(order_id) AS total_orders
+    FROM orders
+    GROUP BY customer_id
+)
+
+SELECT
+    CASE
+        WHEN avg_discount > 20 THEN 'Discount Buyers'
+        ELSE 'Regular Buyers'
+    END AS customer_group,
+    COUNT(customer_id) AS customers,
+    ROUND(AVG(total_orders),2) AS avg_orders_per_customer
+FROM customer_stats
+GROUP BY customer_group;
+
+9
+WITH customer_spending AS (
+    SELECT
+        c.customer_id,
+        c.region,
+        c.acquisition_chan,
+        SUM(o.net_amount) AS total_spent,
+        NTILE(20) OVER (
+            ORDER BY SUM(o.net_amount) DESC
+        ) AS customer_group
+    FROM customers c
+    JOIN orders o USING (customer_id)
+    GROUP BY
+        c.customer_id,
+        c.region,
+        c.acquisition_chan
+)
+
+SELECT
+    region,
+    acquisition_chan,
+    COUNT(customer_id) AS top_customers,
+    ROUND(SUM(total_spent), 2) AS top_customer_revenue,
+    ROUND(AVG(total_spent), 2) AS avg_spent_per_customer
+FROM customer_spending
+WHERE customer_group = 1
+GROUP BY
+    region,
+    acquisition_chan
+ORDER BY
+    top_customers DESC,
+    top_customer_revenue DESC;
+
+10
+SELECT
+    ab_variant,
+    COUNT(*) AS total_orders,
+    ROUND(AVG(net_amount), 2) AS avg_order_value
+FROM orders
+WHERE ab_variant IN ('A', 'B')
+GROUP BY ab_variant
+ORDER BY ab_variant;
+
+11
+WITH first_order AS (
+    SELECT
+        customer_id,
+        MIN(order_date) AS first_order_date
+    FROM orders
+    GROUP BY customer_id
+)
+
+SELECT
+    o.ab_variant,
+    CASE
+        WHEN julianday(f.first_order_date) - julianday(c.signup_date) <= 60
+        THEN 'New'
+        ELSE 'Returning'
+    END AS customer_type,
+    COUNT(*) AS total_orders,
+    ROUND(AVG(o.net_amount), 2) AS avg_order_value
+FROM orders o
+JOIN customers c
+    ON o.customer_id = c.customer_id
+JOIN first_order f
+    ON o.customer_id = f.customer_id
+WHERE o.ab_variant IN ('A','B')
+GROUP BY
+    o.ab_variant,
+    customer_type
+ORDER BY
+    customer_type,
+    o.ab_variant;
+
